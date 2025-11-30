@@ -48,8 +48,8 @@ static void my_lvgl_touch_read_cb(lv_indev_drv_t *drv, lv_indev_data_t *data)
   }
 
   ESP_PanelTouchPoint points[5];
-  int n = s_touch->readPoints(points, 5, -1);
-
+  int n = s_touch->readPoints(points, 5, 0);   // timeout 0 ms: non blocca
+  
   if (n > 0) {
     int16_t x = points[0].x;
     int16_t y = points[0].y;

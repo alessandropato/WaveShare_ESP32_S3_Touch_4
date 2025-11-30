@@ -28,15 +28,33 @@ void setup()
     if (!can_port_start()) {
       Serial.println("ERRORE: can_port_start() fallita");
     } else {
-      Serial.println("CAN avviata in LISTEN_ONLY");
+      Serial.println("CAN avviata (mode NORMAL)");
     }
   }
 
-  Serial.println("Setup completato: UI + CAN pronte.");}
+  Serial.println("Setup completato: UI + CAN pronte.");
+}
 
 void loop()
 {
-  // il tuo lv_conf.h usa LV_TICK_CUSTOM con millis()
+  static uint32_t last_ms       = 0;
+  static uint32_t last_ui_ms    = 0;
+
+  uint32_t now = millis();
+
+  // Tick LVGL (se in lv_conf.h hai LV_TICK_CUSTOM == 0)
+  uint32_t diff = now - last_ms;
+  last_ms = now;
+  lv_tick_inc(diff);
+
+  // Aggiorna UI ogni 1000 ms
+  if (now - last_ui_ms >= 1000) {
+    last_ui_ms = now;
+    ui_main_update();
+  }
+
+  // LVGL gestisce rendering, input, animazioni, ecc.
   lv_timer_handler();
+
   delay(5);
 }
