@@ -137,39 +137,42 @@ void ui_main_init()
   lv_obj_set_style_bg_color(scr, lv_color_hex(0x009EA8), 0);
   lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-  // --------- Blocco tempo rimanente (alto sinistra) ---------
-  lv_obj_t *time_block = lv_obj_create(scr);
-  lv_obj_remove_style_all(time_block);
-  lv_obj_set_size(time_block, 220, 100);
-  lv_obj_align(time_block, LV_ALIGN_TOP_LEFT, 20, 12);
-  lv_obj_set_flex_flow(time_block, LV_FLEX_FLOW_COLUMN);
-  lv_obj_set_flex_align(time_block,
-                        LV_FLEX_ALIGN_START,
+  // --------- Riga superiore: testo tempo, valore, icone ---------
+  lv_obj_t *top_row = lv_obj_create(scr);
+  lv_obj_remove_style_all(top_row);
+  lv_obj_set_size(top_row, lv_pct(100), 90);
+  lv_obj_align(top_row, LV_ALIGN_TOP_MID, 0, 12);
+  lv_obj_set_flex_flow(top_row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(top_row,
+                        LV_FLEX_ALIGN_SPACE_BETWEEN,
                         LV_FLEX_ALIGN_CENTER,
                         LV_FLEX_ALIGN_CENTER);
-  lv_obj_set_style_pad_row(time_block, 6, 0);
-  lv_obj_move_foreground(time_block);
+  lv_obj_set_style_pad_left(top_row, 20, 0);
+  lv_obj_set_style_pad_right(top_row, 20, 0);
+
+  lv_obj_t *time_block = lv_obj_create(top_row);
+  lv_obj_remove_style_all(time_block);
+  lv_obj_set_size(time_block, 200, LV_SIZE_CONTENT);
+  lv_obj_set_style_text_color(time_block, lv_color_white(), 0);
+  lv_obj_set_style_text_align(time_block, LV_TEXT_ALIGN_LEFT, 0);
 
   label_time_title = lv_label_create(time_block);
-  lv_label_set_text(label_time_title, "TIME REMAINING");
+  lv_label_set_text(label_time_title, "TIME\nREMAINING");
+  lv_obj_set_style_text_font(label_time_title, &lv_font_montserrat_28, 0);
   lv_obj_set_style_text_color(label_time_title, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_time_title, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_align(label_time_title, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_align(label_time_title, LV_TEXT_ALIGN_LEFT, 0);
 
-  label_time_value = lv_label_create(time_block);
-  lv_label_set_text(label_time_value, "--:--");
-  lv_obj_set_style_text_color(label_time_value, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_time_value, &lv_font_montserrat_32, 0);
-  lv_obj_set_style_text_align(label_time_value, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_t *icon_row = lv_obj_create(top_row);
+  lv_obj_remove_style_all(icon_row);
+  lv_obj_set_flex_flow(icon_row, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(icon_row,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(icon_row, 16, 0);
 
-  label_time_unit = lv_label_create(time_block);
-  lv_label_set_text(label_time_unit, "min");
-  lv_obj_set_style_text_color(label_time_unit, lv_color_white(), 0);
-  lv_obj_set_style_text_font(label_time_unit, &lv_font_montserrat_32, 0);
-  lv_obj_set_style_text_align(label_time_unit, LV_TEXT_ALIGN_CENTER, 0);
-
-  // --------- Icone stato (alto destra) ---------
-  icon_warn = lv_obj_create(scr);
+  // --------- Icone stato ---------
+  icon_warn = lv_obj_create(icon_row);
   lv_obj_remove_style_all(icon_warn);
   lv_obj_set_size(icon_warn, 46, 46);
   lv_obj_set_style_radius(icon_warn, LV_RADIUS_CIRCLE, 0);
@@ -177,13 +180,12 @@ void ui_main_init()
   lv_obj_set_style_bg_opa(icon_warn, LV_OPA_COVER, 0);
   lv_obj_set_style_shadow_width(icon_warn, 12, 0);
   lv_obj_set_style_shadow_opa(icon_warn, LV_OPA_30, 0);
-  lv_obj_align(icon_warn, LV_ALIGN_TOP_RIGHT, -80, 20);
   lv_obj_t *warn_label = lv_label_create(icon_warn);
   lv_label_set_text(warn_label, "!");
   lv_obj_set_style_text_color(warn_label, lv_color_black(), 0);
   lv_obj_center(warn_label);
 
-  icon_stop = lv_obj_create(scr);
+  icon_stop = lv_obj_create(icon_row);
   lv_obj_remove_style_all(icon_stop);
   lv_obj_set_size(icon_stop, 46, 46);
   lv_obj_set_style_radius(icon_stop, LV_RADIUS_CIRCLE, 0);
@@ -191,11 +193,33 @@ void ui_main_init()
   lv_obj_set_style_bg_opa(icon_stop, LV_OPA_COVER, 0);
   lv_obj_set_style_shadow_width(icon_stop, 12, 0);
   lv_obj_set_style_shadow_opa(icon_stop, LV_OPA_30, 0);
-  lv_obj_align(icon_stop, LV_ALIGN_TOP_RIGHT, -20, 20);
   lv_obj_t *stop_label = lv_label_create(icon_stop);
   lv_label_set_text(stop_label, "X");
   lv_obj_set_style_text_color(stop_label, lv_color_white(), 0);
   lv_obj_center(stop_label);
+
+  // --------- Valore tempo centrato orizzontalmente ---------
+  lv_obj_t *time_value_block = lv_obj_create(scr);
+  lv_obj_remove_style_all(time_value_block);
+  lv_obj_set_size(time_value_block, 140, 90);
+  lv_obj_align(time_value_block, LV_ALIGN_TOP_MID, 0, 12);
+  lv_obj_set_flex_flow(time_value_block, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(time_value_block,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_text_color(time_value_block, lv_color_white(), 0);
+  lv_obj_move_foreground(time_value_block);
+
+  label_time_value = lv_label_create(time_value_block);
+  lv_label_set_text(label_time_value, "xxx");
+  lv_obj_set_style_text_font(label_time_value, &lv_font_montserrat_32, 0);
+  lv_obj_set_style_text_align(label_time_value, LV_TEXT_ALIGN_CENTER, 0);
+
+  label_time_unit = lv_label_create(time_value_block);
+  lv_label_set_text(label_time_unit, "min");
+  lv_obj_set_style_text_font(label_time_unit, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_align(label_time_unit, LV_TEXT_ALIGN_CENTER, 0);
 
   // --------- Gauge circolare ---------
   const lv_coord_t arc_size = 260;
