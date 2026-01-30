@@ -62,11 +62,19 @@ void ui_main_update()
   const bool status2_valid = s.status2_lastUpdate_ms != 0;
 
   // ---------- SOC centrale ----------
+  auto clamp_soc = [](int16_t value) -> uint8_t {
+    if (value < 0) return 0;
+    if (value > 100) return 100;
+    return static_cast<uint8_t>(value);
+  };
+
+  // Usa sempre SOC_ACTIVE come valore principale.
+  const bool soc_active_valid = status_valid && s.soc_active_percent >= 0;
+  const bool soc_valid = soc_active_valid;
+
   uint8_t soc = 0;
-  bool soc_valid = status_valid && s.soc_tot_percent >= 0;
-  if (soc_valid) {
-    soc = static_cast<uint8_t>(s.soc_tot_percent);
-    if (soc > 100) soc = 100;
+  if (soc_active_valid) {
+    soc = clamp_soc(s.soc_active_percent);
   }
 
   lv_color_t accent_col;
@@ -339,23 +347,37 @@ void ui_main_init()
   lv_obj_move_foreground(soc_arc_fg);
 
   // --------- Testi centrali ---------
-  label_soc_value = lv_label_create(page_main);
-  lv_label_set_text(label_soc_value, UNAVAILABLE_TEXT);
-  lv_obj_set_style_text_font(label_soc_value, &lv_font_montserrat_32, 0);
-  lv_obj_set_style_transform_zoom(label_soc_value, 384, 0);  // ~1.5x
-  lv_obj_set_style_text_color(label_soc_value, lv_color_white(), 0);
-  lv_obj_align(label_soc_value, LV_ALIGN_CENTER, 0, -40);
+  lv_obj_t *soc_center = lv_obj_create(page_main);
+  lv_obj_remove_style_all(soc_center);
+  lv_obj_set_size(soc_center, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_align(soc_center, LV_ALIGN_CENTER, 0, -10);
+  lv_obj_set_flex_flow(soc_center, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(soc_center,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_row(soc_center, 6, 0);
+  lv_obj_set_style_text_align(soc_center, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_style_text_color(soc_center, lv_color_white(), 0);
+  lv_obj_set_style_text_opa(soc_center, LV_OPA_COVER, 0);
+  lv_obj_move_foreground(soc_center);
 
-  label_soc_percent = lv_label_create(page_main);
+  label_soc_value = lv_label_create(soc_center);
+  lv_label_set_text(label_soc_value, UNAVAILABLE_TEXT);
+  lv_obj_set_style_text_font(label_soc_value, &lv_font_montserrat_48, 0);
+  lv_obj_set_style_text_color(label_soc_value, lv_color_white(), 0);
+  lv_obj_set_style_text_opa(label_soc_value, LV_OPA_COVER, 0);
+
+  label_soc_percent = lv_label_create(soc_center);
   lv_label_set_text(label_soc_percent, "%");
   lv_obj_set_style_text_font(label_soc_percent, &lv_font_montserrat_32, 0);
   lv_obj_set_style_text_color(label_soc_percent, lv_color_white(), 0);
-  lv_obj_align(label_soc_percent, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_set_style_text_opa(label_soc_percent, LV_OPA_COVER, 0);
 
-  label_soc_state = lv_label_create(page_main);
+  label_soc_state = lv_label_create(soc_center);
   lv_label_set_text(label_soc_state, UNAVAILABLE_TEXT);
   lv_obj_set_style_text_color(label_soc_state, lv_color_white(), 0);
-  lv_obj_align(label_soc_state, LV_ALIGN_CENTER, 0, 40);
+  lv_obj_set_style_text_opa(label_soc_state, LV_OPA_COVER, 0);
 
   // --------- Fascia inferiore con 3 colonne ---------
   lv_obj_t *bottom_row = lv_obj_create(page_main);
