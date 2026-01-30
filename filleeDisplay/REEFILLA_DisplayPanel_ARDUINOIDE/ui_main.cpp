@@ -123,6 +123,21 @@ void ui_main_update()
     }
   }
 
+  auto set_icon_visible = [](lv_obj_t *obj, bool visible) {
+    if (!obj) return;
+    if (visible) {
+      lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    }
+  };
+
+  const bool warn_visible = status_valid && (s.main_state == 2);
+  const bool stop_visible = status_valid && (s.main_state == 6);
+
+  set_icon_visible(icon_warn, warn_visible);
+  set_icon_visible(icon_stop, stop_visible);
+
   // ---------- Tempo rimanente ----------
   auto pick_time_s = [&]() -> int32_t {
     if (!status_valid) return DATA_UNAVAILABLE;
