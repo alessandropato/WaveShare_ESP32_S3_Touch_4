@@ -139,7 +139,7 @@ void ui_main_update()
       uint32_t total_sec = static_cast<uint32_t>(time_s);
       uint32_t minutes = total_sec / 60U;
       uint32_t seconds = total_sec % 60U;
-      snprintf(buf, sizeof(buf), "%u:%02u", (unsigned)minutes, (unsigned)seconds);
+      snprintf(buf, sizeof(buf), "%u%02u", (unsigned)minutes, (unsigned)seconds);
       lv_label_set_text(label_time_value, buf);
     }
   }
@@ -311,6 +311,7 @@ void ui_main_init()
   lv_arc_set_range(soc_arc_bg, 0, 100);
   lv_arc_set_rotation(soc_arc_bg, 270);
   lv_arc_set_bg_angles(soc_arc_bg, 20, 340);
+  lv_arc_set_mode(soc_arc_bg, LV_ARC_MODE_REVERSE);
   lv_arc_set_value(soc_arc_bg, 100);
   lv_obj_align(soc_arc_bg, LV_ALIGN_CENTER, 0, -10);
   lv_obj_clear_flag(soc_arc_bg, LV_OBJ_FLAG_CLICKABLE);
@@ -325,6 +326,7 @@ void ui_main_init()
   lv_arc_set_range(soc_arc_fg, 0, 100);
   lv_arc_set_rotation(soc_arc_fg, 270);
   lv_arc_set_bg_angles(soc_arc_fg, 20, 340);
+  lv_arc_set_mode(soc_arc_fg, LV_ARC_MODE_REVERSE);
   lv_arc_set_value(soc_arc_fg, 0);
   lv_obj_align(soc_arc_fg, LV_ALIGN_CENTER, 0, -10);
   lv_obj_clear_flag(soc_arc_fg, LV_OBJ_FLAG_CLICKABLE);
