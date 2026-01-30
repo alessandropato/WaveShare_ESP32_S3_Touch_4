@@ -31,17 +31,24 @@ static lv_obj_t *label_line_name[3]  = { nullptr, nullptr, nullptr };
 static lv_obj_t *label_line_value[3] = { nullptr, nullptr, nullptr };
 static lv_obj_t *label_line_unit[3]  = { nullptr, nullptr, nullptr };
 
+static constexpr int32_t DATA_UNAVAILABLE = -11;
+static const char *UNAVAILABLE_TEXT = "-11";
+
 // ----------------------------------------------------
-// Helper: stringa modalità MSM
+// Helper: stringa stato principale
 // ----------------------------------------------------
-static const char *mode_to_str(uint8_t msm_state)
+static const char *state_to_str(int16_t state)
 {
-  switch (msm_state)
+  switch (state)
   {
-    case 0: return "Standby";
-    case 1: return "Charging";
-    case 2: return "Discharging";
-    default: return "Unknown";
+    case 0: return "TURN ON";
+    case 1: return "WAKE BMS";
+    case 2: return "RECOVERY";
+    case 3: return "RUN CHARGE";
+    case 4: return "RUN DISCH";
+    case 5: return "RUN STBY";
+    case 6: return "ERROR";
+    default: return "UNKNOWN";
   }
 }
 
@@ -51,13 +58,21 @@ static const char *mode_to_str(uint8_t msm_state)
 void ui_main_update()
 {
   const DbcState &s = dbc_get_state();
+  const bool status_valid  = s.status_lastUpdate_ms  != 0;
+  const bool status2_valid = s.status2_lastUpdate_ms != 0;
 
   // ---------- SOC centrale ----------
-  uint8_t soc = s.soc_percent;
-  if (soc > 100) soc = 100;
+  uint8_t soc = 0;
+  bool soc_valid = status_valid && s.soc_tot_percent >= 0;
+  if (soc_valid) {
+    soc = static_cast<uint8_t>(s.soc_tot_percent);
+    if (soc > 100) soc = 100;
+  }
 
   lv_color_t accent_col;
-  if (soc < 10) {
+  if (!soc_valid) {
+    accent_col = lv_palette_main(LV_PALETTE_BLUE);
+  } else if (soc < 10) {
     accent_col = lv_palette_main(LV_PALETTE_RED);
   } else if (soc < 40) {
     accent_col = lv_palette_main(LV_PALETTE_YELLOW);
@@ -71,9 +86,13 @@ void ui_main_update()
   }
 
   if (label_soc_value) {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%u", (unsigned)soc);
-    lv_label_set_text(label_soc_value, buf);
+    if (!soc_valid) {
+      lv_label_set_text(label_soc_value, UNAVAILABLE_TEXT);
+    } else {
+      char buf[16];
+      snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(soc));
+      lv_label_set_text(label_soc_value, buf);
+    }
   }
 
   if (label_soc_percent) {
@@ -81,25 +100,48 @@ void ui_main_update()
   }
 
   if (label_soc_state) {
-    const char *mode = mode_to_str(s.msm_state);
-    char buf[32];
-    size_t len = strlen(mode);
-    if (len >= sizeof(buf)) len = sizeof(buf) - 1;
-    for (size_t i = 0; i < len; ++i) {
-      buf[i] = toupper((unsigned char)mode[i]);
+    if (!status_valid || s.main_state < 0) {
+      lv_label_set_text(label_soc_state, UNAVAILABLE_TEXT);
+    } else {
+      const char *mode = state_to_str(s.main_state);
+      char buf[32];
+      size_t len = strlen(mode);
+      if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+      for (size_t i = 0; i < len; ++i) {
+        buf[i] = toupper((unsigned char)mode[i]);
+      }
+      buf[len] = '\0';
+      lv_label_set_text(label_soc_state, buf);
     }
-    buf[len] = '\0';
-    lv_label_set_text(label_soc_state, buf);
   }
 
   // ---------- Tempo rimanente ----------
+  auto pick_time_s = [&]() -> int32_t {
+    if (!status_valid) return DATA_UNAVAILABLE;
+
+    const bool ttf_valid = s.time_to_full_s >= 0;
+    const bool tte_valid = s.time_to_empty_s >= 0;
+
+    if (s.main_state == 3 && ttf_valid) return s.time_to_full_s;
+    if (s.main_state == 4 && tte_valid) return s.time_to_empty_s;
+    if (tte_valid) return s.time_to_empty_s;
+    if (ttf_valid) return s.time_to_full_s;
+    return DATA_UNAVAILABLE;
+  };
+
+  int32_t time_s = pick_time_s();
+
   if (label_time_value) {
-    char buf[16];
-    uint32_t total_sec = s.remaining_time_s;
-    uint32_t minutes = total_sec / 60U;
-    uint32_t seconds = total_sec % 60U;
-    snprintf(buf, sizeof(buf), "%u:%02u", (unsigned)minutes, (unsigned)seconds);
-    lv_label_set_text(label_time_value, buf);
+    if (time_s < 0) {
+      lv_label_set_text(label_time_value, UNAVAILABLE_TEXT);
+    } else {
+      char buf[16];
+      uint32_t total_sec = static_cast<uint32_t>(time_s);
+      uint32_t minutes = total_sec / 60U;
+      uint32_t seconds = total_sec % 60U;
+      snprintf(buf, sizeof(buf), "%u:%02u", (unsigned)minutes, (unsigned)seconds);
+      lv_label_set_text(label_time_value, buf);
+    }
   }
 
   if (label_time_unit) {
@@ -107,17 +149,23 @@ void ui_main_update()
   }
 
   // ---------- Linee inferiori (placeholder: valori attuali) ----------
-  int line_values[3];
-  line_values[0] = (int)s.bms_p_dc_w;
-  line_values[1] = (int)s.inv_p_ac_w;
-  line_values[2] = (int)s.bms_p_dc_w - (int)s.inv_p_ac_w;
+  auto set_line_value = [&](int idx, bool valid, int32_t value) {
+    if (!label_line_value[idx]) return;
+    if (!valid) {
+      lv_label_set_text(label_line_value[idx], UNAVAILABLE_TEXT);
+      return;
+    }
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", value);
+    lv_label_set_text(label_line_value[idx], buf);
+  };
 
   for (int i = 0; i < 3; ++i) {
-    if (label_line_value[i]) {
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%d", line_values[i]);
-      lv_label_set_text(label_line_value[i], buf);
-    }
+    bool valid = status2_valid && s.inv_p_ac_w[i] != DATA_UNAVAILABLE;
+    set_line_value(i, valid, s.inv_p_ac_w[i]);
+  }
+
+  for (int i = 0; i < 3; ++i) {
     if (label_line_unit[i]) {
       lv_label_set_text(label_line_unit[i], "W");
     }
@@ -133,12 +181,46 @@ void ui_main_init()
 
   lv_obj_t *scr = lv_scr_act();
 
-  // Sfondo teal pieno
-  lv_obj_set_style_bg_color(scr, lv_color_hex(0x009EA8), 0);
+  // Sfondo teal Pantone 326C
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x00B2A9), 0);
   lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
+  // --------- Container scrollabile solo orizzontalmente ---------
+  lv_obj_t *pages = lv_obj_create(scr);
+  lv_obj_remove_style_all(pages);
+  lv_obj_set_size(pages, lv_pct(100), lv_pct(100));
+  lv_obj_center(pages);
+  lv_obj_set_scroll_dir(pages, LV_DIR_HOR);
+  lv_obj_set_scroll_snap_x(pages, LV_SCROLL_SNAP_CENTER);
+  lv_obj_set_scrollbar_mode(pages, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_clear_flag(pages, LV_OBJ_FLAG_SCROLL_ELASTIC);
+  lv_obj_set_flex_flow(pages, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(pages,
+                        LV_FLEX_ALIGN_START,
+                        LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(pages, 0, 0);
+
+  lv_obj_t *page_main = lv_obj_create(pages);
+  lv_obj_remove_style_all(page_main);
+  lv_obj_set_size(page_main, lv_pct(100), lv_pct(100));
+  lv_obj_set_style_bg_opa(page_main, LV_OPA_TRANSP, 0);
+  lv_obj_set_scrollbar_mode(page_main, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_set_scroll_dir(page_main, LV_DIR_NONE);
+
+  lv_obj_t *page_secondary = lv_obj_create(pages);
+  lv_obj_remove_style_all(page_secondary);
+  lv_obj_set_size(page_secondary, lv_pct(100), lv_pct(100));
+  lv_obj_set_style_bg_opa(page_secondary, LV_OPA_TRANSP, 0);
+  lv_obj_set_scrollbar_mode(page_secondary, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_set_scroll_dir(page_secondary, LV_DIR_NONE);
+  lv_obj_t *page2_label = lv_label_create(page_secondary);
+  lv_label_set_text(page2_label, "COMING SOON");
+  lv_obj_set_style_text_color(page2_label, lv_color_white(), 0);
+  lv_obj_center(page2_label);
+
   // --------- Riga superiore: testo tempo, valore, icone ---------
-  lv_obj_t *top_row = lv_obj_create(scr);
+  lv_obj_t *top_row = lv_obj_create(page_main);
   lv_obj_remove_style_all(top_row);
   lv_obj_set_size(top_row, lv_pct(100), 90);
   lv_obj_align(top_row, LV_ALIGN_TOP_MID, 0, 12);
@@ -199,7 +281,7 @@ void ui_main_init()
   lv_obj_center(stop_label);
 
   // --------- Valore tempo centrato orizzontalmente ---------
-  lv_obj_t *time_value_block = lv_obj_create(scr);
+  lv_obj_t *time_value_block = lv_obj_create(page_main);
   lv_obj_remove_style_all(time_value_block);
   lv_obj_set_size(time_value_block, 140, 90);
   lv_obj_align(time_value_block, LV_ALIGN_TOP_MID, 0, 12);
@@ -212,7 +294,7 @@ void ui_main_init()
   lv_obj_move_foreground(time_value_block);
 
   label_time_value = lv_label_create(time_value_block);
-  lv_label_set_text(label_time_value, "xxx");
+  lv_label_set_text(label_time_value, UNAVAILABLE_TEXT);
   lv_obj_set_style_text_font(label_time_value, &lv_font_montserrat_32, 0);
   lv_obj_set_style_text_align(label_time_value, LV_TEXT_ALIGN_CENTER, 0);
 
@@ -224,7 +306,7 @@ void ui_main_init()
   // --------- Gauge circolare ---------
   const lv_coord_t arc_size = 260;
 
-  soc_arc_bg = lv_arc_create(scr);
+  soc_arc_bg = lv_arc_create(page_main);
   lv_obj_set_size(soc_arc_bg, arc_size, arc_size);
   lv_arc_set_range(soc_arc_bg, 0, 100);
   lv_arc_set_rotation(soc_arc_bg, 270);
@@ -238,7 +320,7 @@ void ui_main_init()
   lv_obj_set_style_arc_opa(soc_arc_bg, LV_OPA_TRANSP, LV_PART_INDICATOR);
   lv_obj_set_style_bg_opa(soc_arc_bg, LV_OPA_TRANSP, LV_PART_KNOB);
 
-  soc_arc_fg = lv_arc_create(scr);
+  soc_arc_fg = lv_arc_create(page_main);
   lv_obj_set_size(soc_arc_fg, arc_size, arc_size);
   lv_arc_set_range(soc_arc_fg, 0, 100);
   lv_arc_set_rotation(soc_arc_fg, 270);
@@ -255,26 +337,26 @@ void ui_main_init()
   lv_obj_move_foreground(soc_arc_fg);
 
   // --------- Testi centrali ---------
-  label_soc_value = lv_label_create(scr);
-  lv_label_set_text(label_soc_value, "--");
+  label_soc_value = lv_label_create(page_main);
+  lv_label_set_text(label_soc_value, UNAVAILABLE_TEXT);
   lv_obj_set_style_text_font(label_soc_value, &lv_font_montserrat_32, 0);
   lv_obj_set_style_transform_zoom(label_soc_value, 384, 0);  // ~1.5x
   lv_obj_set_style_text_color(label_soc_value, lv_color_white(), 0);
   lv_obj_align(label_soc_value, LV_ALIGN_CENTER, 0, -40);
 
-  label_soc_percent = lv_label_create(scr);
+  label_soc_percent = lv_label_create(page_main);
   lv_label_set_text(label_soc_percent, "%");
   lv_obj_set_style_text_font(label_soc_percent, &lv_font_montserrat_32, 0);
   lv_obj_set_style_text_color(label_soc_percent, lv_color_white(), 0);
   lv_obj_align(label_soc_percent, LV_ALIGN_CENTER, 0, 0);
 
-  label_soc_state = lv_label_create(scr);
-  lv_label_set_text(label_soc_state, "STATE");
+  label_soc_state = lv_label_create(page_main);
+  lv_label_set_text(label_soc_state, UNAVAILABLE_TEXT);
   lv_obj_set_style_text_color(label_soc_state, lv_color_white(), 0);
   lv_obj_align(label_soc_state, LV_ALIGN_CENTER, 0, 40);
 
   // --------- Fascia inferiore con 3 colonne ---------
-  lv_obj_t *bottom_row = lv_obj_create(scr);
+  lv_obj_t *bottom_row = lv_obj_create(page_main);
   lv_obj_remove_style_all(bottom_row);
   lv_obj_set_size(bottom_row, lv_pct(100), 140);
   lv_obj_align(bottom_row, LV_ALIGN_BOTTOM_MID, 0, 8);
@@ -307,7 +389,7 @@ void ui_main_init()
     lv_label_set_text(label_line_name[i], line_titles[i]);
 
     label_line_value[i] = lv_label_create(col);
-    lv_label_set_text(label_line_value[i], "----");
+    lv_label_set_text(label_line_value[i], UNAVAILABLE_TEXT);
     lv_obj_set_style_text_font(label_line_value[i], &lv_font_montserrat_32, 0);
 
     label_line_unit[i] = lv_label_create(col);

@@ -1,28 +1,31 @@
 #include "dbc_decoder.h"
+#include <limits.h>
 
 // ----------------------
 // ID / configurazione DBC
 // ----------------------
 
 // ========================= VCU_Display_Status (0x1088A0F1) =========================
-// B0   : BMS_SOC [% interi, 0..100]
-// B1-2 : Remaining time [s, uint16] (TimeToFull se in carica, TimeToEmpty se in scarica)
-// B3   : MSM debounced state (0=standby,1=carica,2=scarica)
-// B4   : Max battery temperature [°C, int8]
-// B5   : Max inverter temperature [°C, int8]
-// B6-7 : BMS_P_DC [W, int16]
+// B0   : SOC_TOT [% 0..100, 0xFF=invalid]
+// B1   : SOC_ACTIVE [% 0..100, 0xFF=invalid]
+// B2-3 : TimeToFull  [0.1 min, uint16]
+// B4-5 : TimeToEmpty [0.1 min, uint16]
+// B6   : MainStateMachineState (enum)
+// B7   : Reserved
 static const uint32_t DBC_ID_VCU_DISPLAY_STATUS   = 0x1088A0F1UL;
 static const bool     DBC_VCU_DISPLAY_STATUS_EXTD = true;
 
 // ========================= VCU_Display_Status_2 (0x1088A1F1) =========================
-// B0-1: INV_GRID_V_AC [0.1 V, uint16]
-// B2-3: INV_P_AC [W, int16]
-// B4-7: RESERVED
+// B0-1: INV_P_AC_VECT[0] (0.1 kW, int16)
+// B2-3: INV_P_AC_VECT[1] (0.1 kW, int16)
+// B4-5: INV_P_AC_VECT[2] (0.1 kW, int16)
+// B6-7: Reserved
 static const uint32_t DBC_ID_VCU_DISPLAY_STATUS2   = 0x1088A1F1UL;
 static const bool     DBC_VCU_DISPLAY_STATUS2_EXTD = true;
 
 // Stato globale
 static DbcState g_dbc_state;
+static constexpr int32_t DBC_NO_DATA = -11;
 
 // ----------------------
 // Helper per LE 16 bit
@@ -42,46 +45,46 @@ static int16_t read_le_i16(const uint8_t *d)
 // ----------------------
 static void decode_vcu_display_status(const CanFrame &frame)
 {
-  if (frame.dlc < 7) {
-    Serial.println("[DBC] VCU_Display_Status: DLC < 7, frame ignorato");
+  if (frame.dlc < 8) {
+    Serial.println("[DBC] VCU_Display_Status: DLC < 8, frame ignorato");
     return;
   }
 
   const uint8_t *d = frame.data;
 
-  uint8_t  soc_percent      = d[0];
-  uint16_t remaining_time_s = read_le_u16(&d[1]);
-  uint8_t  msm_state        = d[3];
-  int8_t   max_batt_temp_c  = (int8_t)d[4];
-  int8_t   max_inv_temp_c   = (int8_t)d[5];
-  int16_t  bms_p_dc_w       = read_le_i16(&d[6]);
+  auto decode_percent = [](uint8_t raw) -> int16_t {
+    return (raw == 0xFFU) ? static_cast<int16_t>(DBC_NO_DATA)
+                          : static_cast<int16_t>(raw);
+  };
 
-  g_dbc_state.soc_percent          = soc_percent;
-  g_dbc_state.remaining_time_s     = remaining_time_s;
-  g_dbc_state.msm_state            = msm_state;
-  g_dbc_state.max_batt_temp_c      = max_batt_temp_c;
-  g_dbc_state.max_inv_temp_c       = max_inv_temp_c;
-  g_dbc_state.bms_p_dc_w           = bms_p_dc_w;
+  auto decode_time_s = [](uint16_t raw) -> int32_t {
+    if (raw == 0xFFFFU) {
+      return DBC_NO_DATA;
+    }
+    // 0.1 min -> 6 seconds
+    return static_cast<int32_t>(raw) * 6;
+  };
+
+  g_dbc_state.soc_tot_percent    = decode_percent(d[0]);
+  g_dbc_state.soc_active_percent = decode_percent(d[1]);
+  uint16_t raw_ttf = read_le_u16(&d[2]);
+  uint16_t raw_tte = read_le_u16(&d[4]);
+  uint8_t raw_state = d[6];
+
+  g_dbc_state.time_to_full_s  = decode_time_s(raw_ttf);
+  g_dbc_state.time_to_empty_s = decode_time_s(raw_tte);
+  g_dbc_state.main_state      = (raw_state == 0xFFU)
+                                   ? static_cast<int16_t>(DBC_NO_DATA)
+                                   : static_cast<int16_t>(raw_state);
   g_dbc_state.status_lastUpdate_ms = frame.timestamp_ms;
 
-  // Log leggibile
-  const char *mode_str = "unknown";
-  switch (msm_state) {
-    case 0: mode_str = "standby";  break;
-    case 1: mode_str = "charge";   break;
-    case 2: mode_str = "discharge";break;
-  }
-
-  float remaining_min = remaining_time_s / 60.0f;
-
   Serial.printf(
-      "[DBC] Status: SOC=%u%%, Rem=%.1f min, Mode=%s, T_batt=%dC, T_inv=%dC, P_DC=%d W\n",
-      (unsigned)soc_percent,
-      remaining_min,
-      mode_str,
-      (int)max_batt_temp_c,
-      (int)max_inv_temp_c,
-      (int)bms_p_dc_w
+      "[DBC] Status: SOC_TOT=%d%%, SOC_ACTIVE=%d%%, TTF=%.1f min, TTE=%.1f min, STATE=%d\n",
+      (int)g_dbc_state.soc_tot_percent,
+      (int)g_dbc_state.soc_active_percent,
+      (g_dbc_state.time_to_full_s > 0) ? (g_dbc_state.time_to_full_s / 60.0f) : -1.0f,
+      (g_dbc_state.time_to_empty_s > 0) ? (g_dbc_state.time_to_empty_s / 60.0f) : -1.0f,
+      (int)g_dbc_state.main_state
   );
 }
 
@@ -90,26 +93,29 @@ static void decode_vcu_display_status(const CanFrame &frame)
 // ----------------------
 static void decode_vcu_display_status2(const CanFrame &frame)
 {
-  if (frame.dlc < 4) {
-    Serial.println("[DBC] VCU_Display_Status_2: DLC < 4, frame ignorato");
+  if (frame.dlc < 6) {
+    Serial.println("[DBC] VCU_Display_Status_2: DLC < 6, frame ignorato");
     return;
   }
 
   const uint8_t *d = frame.data;
 
-  uint16_t grid_v_ac_deciv = read_le_u16(&d[0]);  // 0.1 V
-  int16_t  inv_p_ac_w      = read_le_i16(&d[2]);  // [W]
+  for (int i = 0; i < 3; ++i) {
+    int16_t raw_deci_kw = read_le_i16(&d[i * 2]);
+    if (raw_deci_kw == INT16_MIN) {
+      g_dbc_state.inv_p_ac_w[i] = DBC_NO_DATA;
+    } else {
+      g_dbc_state.inv_p_ac_w[i] = static_cast<int32_t>(raw_deci_kw) * 100; // 0.1 kW -> W
+    }
+  }
 
-  g_dbc_state.grid_v_ac_deciv       = grid_v_ac_deciv;
-  g_dbc_state.inv_p_ac_w            = inv_p_ac_w;
   g_dbc_state.status2_lastUpdate_ms = frame.timestamp_ms;
 
-  float grid_v = grid_v_ac_deciv / 10.0f;
-
   Serial.printf(
-      "[DBC] Status2: V_grid=%.1f V, P_AC=%d W\n",
-      grid_v,
-      (int)inv_p_ac_w
+      "[DBC] Status2: P_AC = [%.1f, %.1f, %.1f] kW\n",
+      g_dbc_state.inv_p_ac_w[0] / 1000.0f,
+      g_dbc_state.inv_p_ac_w[1] / 1000.0f,
+      g_dbc_state.inv_p_ac_w[2] / 1000.0f
   );
 }
 

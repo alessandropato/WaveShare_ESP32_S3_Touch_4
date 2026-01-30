@@ -7,17 +7,15 @@
 struct DbcState
 {
   // ================== VCU_Display_Status (0x1088A0F1) ==================
-  uint8_t  soc_percent           = 0;   // BMS_SOC [% 0..100]
-  uint16_t remaining_time_s      = 0;   // Remaining time [s]
-  uint8_t  msm_state             = 0;   // 0=standby,1=carica,2=scarica
-  int8_t   max_batt_temp_c       = 0;   // [°C]
-  int8_t   max_inv_temp_c        = 0;   // [°C]
-  int16_t  bms_p_dc_w            = 0;   // [W]
+  int16_t  soc_tot_percent       = -11; // SOC_TOT [%]
+  int16_t  soc_active_percent    = -11; // SOC_ACTIVE [%]
+  int32_t  time_to_full_s        = -11; // TimeToFull [s]
+  int32_t  time_to_empty_s       = -11; // TimeToEmpty [s]
+  int16_t  main_state            = -11; // Main state machine enum
   uint32_t status_lastUpdate_ms  = 0;   // millis ultima ricezione valida
 
   // ================== VCU_Display_Status_2 (0x1088A1F1) ==================
-  uint16_t grid_v_ac_deciv       = 0;   // INV_GRID_V_AC [0.1 V]
-  int16_t  inv_p_ac_w            = 0;   // INV_P_AC [W]
+  int32_t  inv_p_ac_w[3]         = { -11, -11, -11 }; // INV_P_AC_VECT[*] [W]
   uint32_t status2_lastUpdate_ms = 0;   // millis ultima ricezione valida
 };
 
